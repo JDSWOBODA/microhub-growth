@@ -12,9 +12,11 @@
 
 ## Required hosting controls (not enabled by changing app files)
 
-The repository configures the response headers; their presence on the live deployment has not been verified. Live firewall rules and Deployment Protection settings have not been inspected or changed.
+Live inspection found project `microhub-growth` serving production commit `cf622ff44e6557cbd571ba1017f4304c19765d38`, which predates the security hardening. The public production URL `https://microhub-growth.vercel.app` returned the application's shared-password screen. The repository configures response headers, but their live presence has not been verified: the deployment fetch timed out.
 
-In Vercel, verify that the deployment runs the Nitro API handlers and the production headers are present.
+Vercel project metadata reports SSO protection enabled with scope `all_except_custom_domains`, hosting password protection disabled, and trusted IPs disabled. This does not establish that every production/alias URL is protected. Active firewall inspection failed: the unscoped lookup returned 404 and the explicit team-scoped lookup returned 403 for `dabblejs-projects`. No hosting settings were changed. An authorized team administrator must verify the active rules and production protection scope.
+
+In Vercel, verify that the deployment runs the Nitro API handlers and the production headers are present after deploying the security changes.
 
 1. Enable Deployment Protection for the production URL and all preview/deployment URLs if all code and seeded references must be private. Protecting only previews leaves the production bundle public. Availability and pricing depend on the Vercel plan.
 2. Configure a Vercel Firewall rate-limit rule for `POST /api/access`, keyed by client IP, with a 20-request/minute limit and a 429 action. Review availability and cost before enabling paid features.
