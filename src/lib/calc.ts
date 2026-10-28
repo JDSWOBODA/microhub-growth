@@ -1,4 +1,4 @@
-import type { Inputs } from './defaults';
+import { bestFohLines, type Inputs } from './defaults';
 export const n = (inputs: Inputs, key: string) => Number(inputs[key]) || 0;
 export type YearResult = { year: string; deliveries: number; logisticsRevenue: number; communityRevenue: number; revenue: number; rent: number; labor: number; fleet: number; other: number; cogs: number; damage: number; sharing: number; costs: number; profit: number; cumulative: number };
 export function calculate(i: Inputs) {
@@ -20,6 +20,11 @@ export function calculate(i: Inputs) {
     cogs += n(i, `${key}Revenue`) * n(i, `${key}Cogs`) / 100;
     communitySf += n(i, `${key}Sf`);
     baseLabor += n(i, `${key}Staff`) * n(i, `${key}Rate`) * n(i, `${key}Hours`) * 52 * (1 + n(i, `${key}Burden`) / 100);
+  }
+  for (const [key] of bestFohLines) {
+    communityRevenue += n(i, `${key}Rev`);
+    cogs += n(i, `${key}Cost`);
+    communitySf += n(i, `${key}Sf`);
   }
   const ramps = [[1, 2, 3, 4].reduce((sum, q) => sum + n(i, `q${q}`), 0) / 400, n(i, 'y2Volume') / 100, n(i, 'y3Volume') / 100];
   let cumulative = -startup;

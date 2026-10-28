@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { answerComplete, scorecardSummary, type SiteScorecard } from './siteScorecard';
-import { criteria } from './sourceReferences';
 import { initialWorkspace } from './defaults';
 import { parseWorkspace } from './workspace';
+import { tierCriteria } from './tiers';
 
 describe('guided site scorecard', () => {
   it('requires both a rating and nonblank evidence, including for a zero rating', () => {
@@ -19,8 +19,9 @@ describe('guided site scorecard', () => {
     expect(scorecardSummary().score).toBeNull();
   });
   it('reports full completion without treating it as gate approval', () => {
-    const card: SiteScorecard = { answers: Object.fromEntries(criteria.map(c => [c.code, { rating: 2, evidence: 'Reviewed with source' }])) };
-    expect(scorecardSummary(card)).toEqual({ completed: criteria.length, progress: 100, weight: 100, score: 100, classification: 'Go (gates pending)' });
+    const betterCriteria = tierCriteria('Better');
+    const card: SiteScorecard = { answers: Object.fromEntries(betterCriteria.map(c => [c.code, { rating: 2, evidence: 'Reviewed with source' }])), gates: { 'Use permitted': false } };
+    expect(scorecardSummary(card, 'Better')).toEqual({ completed: betterCriteria.length, progress: 100, weight: 100, totalWeight: 100, score: 100, classification: 'Gates pending', gatesPassed: 0, gateCount: 5 });
   });
   it('round-trips drafts and leaves historical scores and older workspaces intact', () => {
     const w = initialWorkspace();

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { z } from 'zod';
-import { fields, initialWorkspace, statuses, type Workspace, type Scenario, type InputValue } from './defaults';
+import { defaultInputs, fields, initialWorkspace, seedSites, statuses, type Workspace, type Scenario, type InputValue } from './defaults';
 import { toast } from 'sonner';
 import { scottFields } from './scottModel';
 import { applySeattleRents } from './seattleRents';
@@ -11,9 +11,9 @@ fields.forEach(f => {
 const scottShape = Object.fromEntries(scottFields.map(f => [f.key,z.number().finite().min(0).max(f.max ?? 1e9)]));
 const metadata = z.object({ source: z.string(), confidence: z.enum(['low', 'med', 'high']), validation: z.boolean() });
 const schema = z.object({
-  version: z.literal(1), activeId: z.string(), seattleRentUpdate: z.literal(1).optional(),
+  version: z.literal(1), activeId: z.string(), seattleRentUpdate: z.literal(1).optional(), hubTierUpdate: z.literal(1).optional(),
   scenarios: z.array(z.object({ id: z.string(), name: z.string().min(1), city: z.string(), siteId: z.string().optional(), model: z.enum(['annual','scott']).optional(), scott: z.object({ inputs: z.object(scottShape), metadata: z.record(metadata) }).optional(), inputs: z.object(inputShape), metadata: z.record(metadata) })).min(1).max(500),
-  sites: z.array(z.object({ id: z.string(), name: z.string(), city: z.string(), address: z.string(), sf: z.number().finite().min(0), score: z.number().finite().min(0), neighborhood: z.string(), rent: z.number().finite().min(0), partner: z.string(), status: z.string(), notes: z.string(), scorecard: z.object({ answers: z.record(z.object({ rating: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(), evidence: z.string().max(10000) })) }).optional() })),
+  sites: z.array(z.object({ id: z.string(), name: z.string(), city: z.string(), address: z.string(), sf: z.number().finite().min(0), score: z.number().finite().min(0), neighborhood: z.string(), rent: z.number().finite().min(0), partner: z.string(), status: z.string(), notes: z.string(), tier: z.enum(['Good','Better','Best']).optional(), scorecard: z.object({ answers: z.record(z.object({ rating: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(), evidence: z.string().max(10000) })), weights: z.record(z.number().finite().min(0).max(100)).optional(), gates: z.record(z.boolean()).optional() }).optional() })),
   partners: z.array(z.object({ id: z.string(), org: z.string(), contact: z.string(), role: z.string(), city: z.string(), type: z.string(), status: z.enum(statuses), lastTouch: z.string(), nextStep: z.string(), notes: z.string() })),
 }).superRefine((w, ctx) => {
   if (!w.scenarios.some(s => s.id === w.activeId)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Active scenario is missing' });
@@ -23,7 +23,24 @@ const schema = z.object({
     if (s.model === 'scott' && !s.scott || s.scott && scottFields.some(f => !s.scott!.metadata[f.key])) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Scott assumptions missing' });
   }
 });
-export function parseWorkspace(text: string): Workspace { return schema.parse(JSON.parse(text)) as Workspace; }
+function migrateWorkspace(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const w = raw as Workspace;
+  const defaults = initialWorkspace();
+  const metadataDefaults = Object.fromEntries(fields.map(f => [f.key, { source: f.confirm ? 'Needs confirmation (Franklin/Emi)' : 'Planning default — replace with verified numbers', confidence: 'low' as const, validation: true }]));
+  w.scenarios = (w.scenarios ?? defaults.scenarios).map(s => ({ ...s, inputs: { ...defaultInputs, ...s.inputs }, metadata: { ...metadataDefaults, ...s.metadata } }));
+  const seededById = new Map(seedSites.map(s => [s.id, s]));
+  w.sites = (w.sites ?? defaults.sites).map(site => {
+    const sourceId = site.id.replace('source-20261007-', '');
+    const tier = site.tier ?? seededById.get(site.id)?.tier ?? (site.city === 'Los Angeles' ? 'Better' : sourceId === 'sodo' || sourceId === 'stadium' ? 'Better' : sourceId === 'capitol' ? 'Best' : undefined);
+    return { ...site, tier };
+  });
+  for (const seeded of seedSites) if (!w.sites.some(site => site.id === seeded.id)) w.sites.push(seeded);
+  w.partners = w.partners ?? defaults.partners;
+  w.hubTierUpdate = 1;
+  return w;
+}
+export function parseWorkspace(text: string): Workspace { return schema.parse(migrateWorkspace(JSON.parse(text))) as Workspace; }
 const KEY = 'b-line-microhub-v1';
 function load() {
   try { const saved = localStorage.getItem(KEY); return applySeattleRents(saved ? parseWorkspace(saved) : initialWorkspace()); }
