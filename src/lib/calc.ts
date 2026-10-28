@@ -2,6 +2,7 @@ import { bestFohLines, type Inputs } from './defaults';
 export const n = (inputs: Inputs, key: string) => Number(inputs[key]) || 0;
 export type YearResult = { year: string; deliveries: number; logisticsRevenue: number; communityRevenue: number; revenue: number; rent: number; labor: number; fleet: number; other: number; cogs: number; damage: number; sharing: number; costs: number; profit: number; cumulative: number };
 export function calculate(i: Inputs) {
+  if (i.hubTier === 'Good') return calculateGood(i);
   let equipment = 0;
   let fleetAnnual = 0;
   for (const key of ['active', 'reserve', 'van']) {
@@ -21,9 +22,10 @@ export function calculate(i: Inputs) {
     communitySf += n(i, `${key}Sf`);
     baseLabor += n(i, `${key}Staff`) * n(i, `${key}Rate`) * n(i, `${key}Hours`) * 52 * (1 + n(i, `${key}Burden`) / 100);
   }
-  for (const [key] of bestFohLines) {
+  let fohCosts = 0;
+  if (i.hubTier === 'Best') for (const [key] of bestFohLines) {
     communityRevenue += n(i, `${key}Rev`);
-    cogs += n(i, `${key}Cost`);
+    fohCosts += n(i, `${key}Cost`);
     communitySf += n(i, `${key}Sf`);
   }
   const ramps = [[1, 2, 3, 4].reduce((sum, q) => sum + n(i, `q${q}`), 0) / 400, n(i, 'y2Volume') / 100, n(i, 'y3Volume') / 100];
@@ -37,7 +39,7 @@ export function calculate(i: Inputs) {
     const rent = n(i, 'sf') * n(i, 'rent') * (1 - n(i, 'discount') / 100) * escalation;
     const labor = baseLabor * escalation;
     const fleet = fleetAnnual * escalation;
-    const other = (n(i, 'software') + n(i, 'utilities')) * 12 * escalation;
+    const other = ((n(i, 'software') + n(i, 'utilities')) * 12 + fohCosts) * escalation;
     const moduleCogs = cogs * ramp;
     const damage = revenue * n(i, 'damage') / 100;
     const beforeSharing = revenue - rent - labor - fleet - other - moduleCogs - damage;
@@ -52,9 +54,28 @@ export function calculate(i: Inputs) {
   const drivers = [{ name: 'Labor', value: years[0].labor }, { name: 'Rent & occupancy', value: years[0].rent }, { name: 'Fleet operations', value: years[0].fleet }, { name: 'Software & utilities', value: years[0].other }, { name: 'Community COGS', value: years[0].cogs }, { name: 'Damaged goods & sharing', value: years[0].damage + years[0].sharing }].sort((a, b) => b.value - a.value);
   return { years, equipment, grantApplied, grantEligible, startup, year1Total: years[0].costs + startup, breakEven: breakEven < 0 ? null : breakEven + 1, payback: payback < 0 ? null : payback + 1, costPerDelivery: years[0].deliveries ? (years[0].costs - years[0].cogs) / years[0].deliveries : null, communitySf, logisticsSf: n(i, 'sf') - communitySf, drivers };
 }
+function calculateGood(i: Inputs) {
+  const equipment = n(i, 'goodPods') * n(i, 'goodPodCost') + n(i, 'goodTrikes') * n(i, 'goodTrikeCost');
+  const startup = equipment + n(i, 'goodStartup');
+  let cumulative = -startup;
+  const years: YearResult[] = [0, 1, 2].map(index => {
+    const revenue = n(i, 'goodAnnualRevenue');
+    const rent = n(i, 'goodRentMonthly') * 12;
+    const other = n(i, 'goodOperatingCost');
+    const costs = rent + other;
+    const profit = revenue - costs;
+    cumulative += profit;
+    return { year: `Y${index + 1}`, deliveries: 0, logisticsRevenue: revenue, communityRevenue: 0, revenue, rent, labor: 0, fleet: 0, other, cogs: 0, damage: 0, sharing: 0, costs, profit, cumulative };
+  });
+  const hasOperations = n(i, 'goodAnnualRevenue') > 0 && years[0].costs > 0;
+  const breakEven = hasOperations ? years.findIndex(y => y.profit >= 0) : -1;
+  const payback = hasOperations ? years.findIndex(y => y.cumulative >= 0) : -1;
+  return { years, equipment, grantApplied: 0, grantEligible: false, startup, year1Total: startup + years[0].costs, breakEven: breakEven < 0 ? null : breakEven + 1, payback: payback < 0 ? null : payback + 1, costPerDelivery: null, communitySf: 0, logisticsSf: n(i, 'goodSf'), drivers: [{ name: 'Operating costs (all-in)', value: years[0].other }, { name: 'Site fee / rent', value: years[0].rent }].sort((a, b) => b.value - a.value) };
+}
 export function sensitivity(i: Inputs) {
   const baseline = calculate(i).years[2].profit;
-  return [{ name: 'Labor rates', keys: ['riderRate', 'staffRate', 'managerRate', 'storeRate', 'repairRate'] }, { name: 'Rent / SF', keys: ['rent'] }, { name: 'Deliveries / day', keys: ['deliveries'] }, { name: 'Hub area', keys: ['sf'] }].map(({ name, keys }) => {
+  const drivers = i.hubTier === 'Good' ? [{ name: 'Operating costs', keys: ['goodOperatingCost'] }, { name: 'Site fee / rent', keys: ['goodRentMonthly'] }, { name: 'Annual revenue', keys: ['goodAnnualRevenue'] }] : [{ name: 'Labor rates', keys: ['riderRate', 'staffRate', 'managerRate', 'storeRate', 'repairRate'] }, { name: 'Rent / SF', keys: ['rent'] }, { name: 'Deliveries / day', keys: ['deliveries'] }, { name: 'Hub area', keys: ['sf'] }];
+  return drivers.map(({ name, keys }) => {
     const lower = { ...i }, upper = { ...i };
     keys.forEach(key => { lower[key] = n(i, key) * 0.8; upper[key] = n(i, key) * 1.2; });
     const a = calculate(lower).years[2].profit - baseline, b = calculate(upper).years[2].profit - baseline;

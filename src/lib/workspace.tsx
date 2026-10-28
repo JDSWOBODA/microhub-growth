@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { z } from 'zod';
-import { defaultInputs, fields, initialWorkspace, seedSites, statuses, type Workspace, type Scenario, type InputValue } from './defaults';
+import { bestFohLines, defaultInputs, fields, initialWorkspace, seedSites, statuses, type Workspace, type Scenario, type InputValue } from './defaults';
 import { toast } from 'sonner';
 import { scottFields } from './scottModel';
 import { applySeattleRents } from './seattleRents';
+import { validTierWeights } from './siteScorecard';
+import { tierDefinitions, tierForSite, tierOrder } from './tiers';
 const inputShape: Record<string, z.ZodTypeAny> = {};
 fields.forEach(f => {
   inputShape[f.key] = typeof f.value === 'number' ? z.number().finite().min(0).max(f.max ?? 1e9) : typeof f.value === 'boolean' ? z.boolean() : f.options ? z.string().refine(v => f.options!.includes(v)) : f.unit === 'date' ? z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => Number.isFinite(Date.parse(v))) : z.string().max(2000);
@@ -12,12 +14,17 @@ const scottShape = Object.fromEntries(scottFields.map(f => [f.key,z.number().fin
 const metadata = z.object({ source: z.string(), confidence: z.enum(['low', 'med', 'high']), validation: z.boolean() });
 const schema = z.object({
   version: z.literal(1), activeId: z.string(), seattleRentUpdate: z.literal(1).optional(), hubTierUpdate: z.literal(1).optional(),
+  tierPinLocations: z.record(z.object({ lat: z.number().finite().min(-90).max(90).optional(), lng: z.number().finite().min(-180).max(180).optional() })).optional(),
   scenarios: z.array(z.object({ id: z.string(), name: z.string().min(1), city: z.string(), siteId: z.string().optional(), model: z.enum(['annual','scott']).optional(), scott: z.object({ inputs: z.object(scottShape), metadata: z.record(metadata) }).optional(), inputs: z.object(inputShape), metadata: z.record(metadata) })).min(1).max(500),
-  sites: z.array(z.object({ id: z.string(), name: z.string(), city: z.string(), address: z.string(), sf: z.number().finite().min(0), score: z.number().finite().min(0), neighborhood: z.string(), rent: z.number().finite().min(0), partner: z.string(), status: z.string(), notes: z.string(), tier: z.enum(['Good','Better','Best']).optional(), scorecard: z.object({ answers: z.record(z.object({ rating: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(), evidence: z.string().max(10000) })), weights: z.record(z.number().finite().min(0).max(100)).optional(), gates: z.record(z.boolean()).optional() }).optional() })),
+  sites: z.array(z.object({ id: z.string(), name: z.string(), city: z.string(), address: z.string(), sf: z.number().finite().min(0), score: z.number().finite().min(0), neighborhood: z.string(), rent: z.number().finite().min(0), partner: z.string(), status: z.string(), notes: z.string(), tier: z.enum(['Good','Better','Best']).optional(), scorecard: z.object({ answers: z.record(z.object({ rating: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(), evidence: z.string().max(10000) })), weights: z.record(z.number().finite().min(0).max(100)).optional(), weightsTier: z.enum(['Good','Better','Best']).optional(), tierWeights: z.object({ Good: z.record(z.number().finite().min(0).max(100)).optional(), Better: z.record(z.number().finite().min(0).max(100)).optional(), Best: z.record(z.number().finite().min(0).max(100)).optional() }).optional(), gates: z.record(z.boolean()).optional() }).optional() })),
   partners: z.array(z.object({ id: z.string(), org: z.string(), contact: z.string(), role: z.string(), city: z.string(), type: z.string(), status: z.enum(statuses), lastTouch: z.string(), nextStep: z.string(), notes: z.string() })),
 }).superRefine((w, ctx) => {
   if (!w.scenarios.some(s => s.id === w.activeId)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Active scenario is missing' });
   for (const collection of [w.scenarios, w.sites, w.partners]) if (new Set(collection.map(x => x.id)).size !== collection.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Duplicate record IDs' });
+  for (const site of w.sites) for (const tier of tierOrder) {
+    const weights = site.scorecard?.tierWeights?.[tier];
+    if (weights && !validTierWeights(tier, weights)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${site.name}: ${tier} weights must total 100` });
+  }
   for (const s of w.scenarios) {
     if (fields.some(f => !s.metadata[f.key])) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Assumption metadata missing' });
     if (s.model === 'scott' && !s.scott || s.scott && scottFields.some(f => !s.scott!.metadata[f.key])) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Scott assumptions missing' });
@@ -25,19 +32,25 @@ const schema = z.object({
 });
 function migrateWorkspace(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
-  const w = raw as Workspace;
-  const defaults = initialWorkspace();
+  const w = structuredClone(raw) as Workspace;
+  if (!Array.isArray(w.scenarios) || !Array.isArray(w.sites)) return w;
   const metadataDefaults = Object.fromEntries(fields.map(f => [f.key, { source: f.confirm ? 'Needs confirmation (Franklin/Emi)' : 'Planning default — replace with verified numbers', confidence: 'low' as const, validation: true }]));
-  w.scenarios = (w.scenarios ?? defaults.scenarios).map(s => ({ ...s, inputs: { ...defaultInputs, ...s.inputs }, metadata: { ...metadataDefaults, ...s.metadata } }));
-  const seededById = new Map(seedSites.map(s => [s.id, s]));
-  w.sites = (w.sites ?? defaults.sites).map(site => {
-    const sourceId = site.id.replace('source-20261007-', '');
-    const tier = site.tier ?? seededById.get(site.id)?.tier ?? (site.city === 'Los Angeles' ? 'Better' : sourceId === 'sodo' || sourceId === 'stadium' ? 'Better' : sourceId === 'capitol' ? 'Best' : undefined);
-    return { ...site, tier };
+  w.scenarios = w.scenarios.map(s => ({ ...s, inputs: { ...defaultInputs, ...s.inputs, hubTier: s.inputs?.hubTier ?? (bestFohLines.some(([key]) => Number(s.inputs?.[`${key}Rev`]) > 0 || Number(s.inputs?.[`${key}Cost`]) > 0 || Number(s.inputs?.[`${key}Sf`]) > 0) ? 'Best' : 'Better') }, metadata: { ...metadataDefaults, ...s.metadata } }));
+  if (w.hubTierUpdate !== 1) {
+    const seededById = new Map(seedSites.map(s => [s.id, s]));
+    w.sites = w.sites.map(site => ({ ...site, tier: site.tier ?? seededById.get(site.id)?.tier ?? (site.id.startsWith('source-20261007-') ? site.city === 'Los Angeles' || ['source-20261007-sodo', 'source-20261007-stadium'].includes(site.id) ? 'Better' : site.id === 'source-20261007-capitol' ? 'Best' : undefined : undefined) }));
+    const pike = seedSites.find(site => site.id === 'pike-place-pop-up')!;
+    if (!w.sites.some(site => site.id === pike.id)) w.sites.push(structuredClone(pike));
+    w.hubTierUpdate = 1;
+  }
+  w.sites = w.sites.map(site => {
+    if (site.scorecard?.weights && !site.scorecard.weightsTier) site = { ...site, scorecard: { ...site.scorecard, weightsTier: tierForSite(site) } };
+    if (!site.scorecard?.gates || Object.keys(site.scorecard.gates).some(key => key.includes(':'))) return site;
+    const tier = tierForSite(site);
+    const gates = { ...site.scorecard.gates };
+    for (const gate of tierDefinitions[tier].gates) if (gates[gate.label] !== undefined) gates[`${tier}:${gate.label}`] = gates[gate.label];
+    return { ...site, scorecard: { ...site.scorecard, gates } };
   });
-  for (const seeded of seedSites) if (!w.sites.some(site => site.id === seeded.id)) w.sites.push(seeded);
-  w.partners = w.partners ?? defaults.partners;
-  w.hubTierUpdate = 1;
   return w;
 }
 export function parseWorkspace(text: string): Workspace { return schema.parse(migrateWorkspace(JSON.parse(text))) as Workspace; }

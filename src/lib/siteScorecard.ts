@@ -3,15 +3,19 @@ import { tierCriteria, tierDefinitions, tierForSite, weightsTotal, type TierCrit
 import type { Site } from './defaults';
 
 export type ScorecardAnswer = { rating?: 0 | 1 | 2; evidence: string };
-export type SiteScorecard = { answers: Record<string, ScorecardAnswer>; weights?: Record<string, number>; gates?: Record<string, boolean> };
+export type SiteScorecard = { answers: Record<string, ScorecardAnswer>; weights?: Record<string, number>; weightsTier?: HubTier; tierWeights?: Partial<Record<HubTier, Record<string, number>>>; gates?: Record<string, boolean> };
 export const scorecardDimensions = (tier: HubTier) => [...new Set(tierCriteria(tier).map(c => c.dimension))];
-export function criteriaForSite(site: Site): TierCriterion[] { return weightedCriteria(tierForSite(site), site.scorecard?.weights); }
+export function criteriaForSite(site: Site): TierCriterion[] { const tier = tierForSite(site); return weightedCriteria(tier, site.scorecard?.tierWeights?.[tier] ?? (site.scorecard?.weightsTier === tier || !site.scorecard?.weightsTier && tier === 'Better' ? site.scorecard?.weights : undefined)); }
 export function weightedCriteria(tier: HubTier, weights?: Record<string, number>) { return tierCriteria(tier).map(c => ({ ...c, weight: weights?.[c.code] ?? c.weight })); }
+export function validTierWeights(tier: HubTier, weights: Record<string, number>) {
+  const values = tierCriteria(tier).map(c => weights[c.code]);
+  return values.every(v => Number.isFinite(v) && v >= 0 && v <= 100) && Math.abs(values.reduce((sum, v) => sum + v, 0) - 100) < 0.000001;
+}
 export function answerComplete(answer?: ScorecardAnswer) {
   return answer?.rating !== undefined && !!answer.evidence.trim();
 }
 export function scorecardSummary(card?: SiteScorecard, tier: HubTier = 'Better') {
-  const criteria = weightedCriteria(tier, card?.weights);
+  const criteria = weightedCriteria(tier, card?.tierWeights?.[tier] ?? (card?.weightsTier === tier || !card?.weightsTier && tier === 'Better' ? card?.weights : undefined));
   let completed = 0, weight = 0, points = 0;
   for (const criterion of criteria) {
     const answer = card?.answers[criterion.code];
@@ -23,9 +27,10 @@ export function scorecardSummary(card?: SiteScorecard, tier: HubTier = 'Better')
   }
   const total = weightsTotal(criteria);
   const gateCount = tierDefinitions[tier].gates.length;
-  const gatesPassed = Object.values(card?.gates ?? {}).filter(Boolean).length;
-  const score = weight ? points / weight * 100 : null;
-  const classification = total !== 100 ? 'Weights must total 100' : gatesPassed < gateCount ? 'Gates pending' : weight < 60 ? 'Incomplete assessment' : score! >= 75 ? 'Go' : score! >= 60 ? 'Promising' : score! >= 45 ? 'Watch' : 'Deprioritize';
+  const gatesPassed = tierDefinitions[tier].gates.filter(gate => card?.gates?.[`${tier}:${gate.label}`] === true).length;
+  const confirmed = tier === 'Better' || !!card?.tierWeights?.[tier];
+  const score = confirmed && Math.abs(total - 100) < 0.000001 && weight ? points / weight * 100 : null;
+  const classification = !confirmed ? 'Weights need confirmation' : Math.abs(total - 100) >= 0.000001 ? 'Weights must total 100' : weight < 60 ? 'Incomplete assessment' : gatesPassed < gateCount ? 'Gates pending' : score! >= 75 ? 'Go' : score! >= 60 ? 'Promising' : score! >= 45 ? 'Watch' : 'Deprioritize';
   return { completed, progress: completed / criteria.length * 100, weight, totalWeight: total, score, classification, gatesPassed, gateCount };
 }
 export const criterionPrompts: Record<string, string> = {

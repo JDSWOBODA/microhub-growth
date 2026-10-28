@@ -1,8 +1,8 @@
-import type { HubTier, Inputs, Site } from './defaults';
+import { fields, type HubTier, type Inputs, type Metadata, type Site, type Workspace } from './defaults';
 import { calculate, n } from './calc';
 
 export const tierOrder: HubTier[] = ['Good', 'Better', 'Best'];
-export const tierColors: Record<HubTier, string> = { Good: '#fbbf24', Better: '#111827', Best: '#7c3aed' };
+export const tierColors: Record<HubTier, string> = { Good: '#b45309', Better: '#147b68', Best: '#7c3aed' };
 export const needsConfirmation = 'Needs confirmation (Franklin/Emi)';
 
 export type TierCriterion = { code: string; dimension: string; label: string; weight: number };
@@ -51,11 +51,11 @@ export const tierDefinitions: Record<HubTier, TierDefinition> = {
       { label: 'Truck receiving', detail: 'Truck can deliver to receiving point' },
     ],
     criteria: [
-      { code: 'g1', dimension: 'Control and permitting', label: 'Site control / permit readiness', weight: 25 },
-      { code: 'g2', dimension: 'Operations', label: 'Power and charging readiness', weight: 20 },
-      { code: 'g3', dimension: 'Operations', label: 'Truck receiving fit', weight: 20 },
-      { code: 'g4', dimension: 'Demand', label: 'Nearby demand density', weight: 20 },
-      { code: 'g5', dimension: 'Policy and partners', label: 'City sponsor / champion', weight: 15 },
+      { code: 'g1', dimension: 'Control and permitting', label: 'Site control / permit readiness', weight: 0 },
+      { code: 'g2', dimension: 'Operations', label: 'Power and charging readiness', weight: 0 },
+      { code: 'g3', dimension: 'Operations', label: 'Truck receiving fit', weight: 0 },
+      { code: 'g4', dimension: 'Demand', label: 'Nearby demand density', weight: 0 },
+      { code: 'g5', dimension: 'Policy and partners', label: 'City sponsor / champion', weight: 0 },
     ],
     frontOfHouse: ['Package lockers', 'Food carts', 'Pickup point'],
     backOfHouse: ['Container pods', 'Receiving', 'Storage / cold storage', 'Charging'],
@@ -92,43 +92,23 @@ export const tierDefinitions: Record<HubTier, TierDefinition> = {
       { label: 'Visible corner / storefront', detail: 'Public-facing civic hub presence' },
     ],
     criteria: [
-      ...betterCriteria.map(c => ({ ...c, weight: Math.max(1, Math.round(c.weight * 0.78)) })),
-      { code: 'b1', dimension: 'Front of house', label: 'Street visibility / corner presence', weight: 6 },
-      { code: 'b2', dimension: 'Front of house', label: 'Residential density and walk-up demand', weight: 5 },
-      { code: 'b3', dimension: 'Front of house', label: 'Amenity partners: childcare, coffee/bodega, tool library, refillery', weight: 6 },
-      { code: 'b4', dimension: 'Site and operations', label: 'Cold storage readiness', weight: 3 },
-      { code: 'b5', dimension: 'Community and scale', label: 'Community co-benefit', weight: 4 },
+      ...betterCriteria.map(c => ({ ...c, weight: 0 })),
+      { code: 'b1', dimension: 'Front of house', label: 'Street visibility / corner presence', weight: 0 },
+      { code: 'b2', dimension: 'Front of house', label: 'Residential density and walk-up demand', weight: 0 },
+      { code: 'b3', dimension: 'Front of house', label: 'Amenity partners: childcare, coffee/bodega, tool library, refillery', weight: 0 },
+      { code: 'b4', dimension: 'Site and operations', label: 'Cold storage readiness', weight: 0 },
+      { code: 'b5', dimension: 'Community and scale', label: 'Community co-benefit', weight: 0 },
     ],
     frontOfHouse: ['Cargo bike share', 'Repair shop', 'Childcare', 'Coffeeshop / bodega', 'Tool library', 'Refillery + recycling', 'EV charging + car share'],
     backOfHouse: ['B-Line crossdock', 'Cold storage', 'Alley loading', 'Charging', 'Bike parking'],
   },
 };
 
-tierDefinitions.Best.criteria = normalizeWeights(tierDefinitions.Best.criteria);
-
-function normalizeWeights(criteria: TierCriterion[]) {
-  const total = criteria.reduce((sum, c) => sum + c.weight, 0);
-  let running = 0;
-  return criteria.map((c, i) => {
-    const weight = i === criteria.length - 1 ? 100 - running : Math.max(1, Math.round(c.weight / total * 100));
-    running += weight;
-    return { ...c, weight };
-  });
-}
-
-export const tierPins = [
-  { tier: 'Good' as const, city: 'Portland + Vancouver WA', label: 'NW SmartPark', lat: 45.522, lng: -122.681 },
-  { tier: 'Good' as const, city: 'Seattle', label: 'Pike Place Pop Up', lat: 47.609, lng: -122.342 },
-  { tier: 'Good' as const, city: 'Los Angeles', label: 'Culver City Pop Up', lat: 34.021, lng: -118.396 },
-  { tier: 'Better' as const, city: 'Portland + Vancouver WA', label: 'CEID', lat: 45.521, lng: -122.661 },
-  { tier: 'Better' as const, city: 'Seattle', label: 'SODO', lat: 47.579, lng: -122.333 },
-  { tier: 'Better' as const, city: 'Los Angeles', label: 'DTLA', lat: 34.047, lng: -118.246 },
-  { tier: 'Best' as const, city: 'Portland + Vancouver WA', label: 'Sellwood', lat: 45.464, lng: -122.652 },
-  { tier: 'Best' as const, city: 'Portland + Vancouver WA', label: 'SE Division', lat: 45.505, lng: -122.622 },
-  { tier: 'Best' as const, city: 'Portland + Vancouver WA', label: 'Slabtown', lat: 45.532, lng: -122.699 },
-  { tier: 'Best' as const, city: 'Seattle', label: 'Capitol Hill', lat: 47.625, lng: -122.322 },
-  { tier: 'Best' as const, city: 'Los Angeles', label: 'Santa Monica', lat: 34.019, lng: -118.491 },
-];
+export const tierPins = tierOrder.flatMap(tier => tierDefinitions[tier].examples.map(example => {
+  const city = example.startsWith('Portland ') ? 'Portland + Vancouver WA' : example.startsWith('Seattle ') ? 'Seattle' : 'Los Angeles';
+  const label = example.replace(/^(Portland|Seattle|LA) /, '');
+  return { id: `${tier}-${example}`, tier, city, label };
+}));
 
 export const operatorMarkets = ['Vancouver BC + Bellingham', 'Seattle', 'Tacoma + Olympia', 'Portland + Vancouver WA', 'Eugene + Corvallis'];
 
@@ -137,19 +117,34 @@ export function tierCriteria(tier: HubTier) { return tierDefinitions[tier].crite
 export function weightsTotal(criteria: TierCriterion[]) { return criteria.reduce((sum, c) => sum + c.weight, 0); }
 
 export function tierComparison(inputs: Inputs) {
-  const better = calculate(inputs);
-  const rentCeiling = better.logisticsSf > 0 ? (better.years[0].revenue - better.years[0].labor - better.years[0].fleet - better.years[0].other - better.years[0].cogs - better.years[0].damage) / 12 : 0;
-  return [
-    { tier: 'Good' as const, site: 'Pods / roughly six parking spaces', sf: 'Micro footprint', startup: n(inputs, 'goodStartup') + n(inputs, 'goodPods') * n(inputs, 'goodPodCost') + n(inputs, 'goodTrikes') * n(inputs, 'goodTrikeCost'), breakEvenRevenue: n(inputs, 'goodRevenue'), rentCeiling: n(inputs, 'goodRentMonthly'), confirmed: false },
-    { tier: 'Better' as const, site: 'Light industrial leased space', sf: `${n(inputs, 'sf').toLocaleString()} SF`, startup: better.startup, breakEvenRevenue: 500000, rentCeiling, confirmed: true },
-    { tier: 'Best' as const, site: 'Visible storefront / civic hub', sf: `${(n(inputs, 'sf') + ['cargoShareSf','refillerySf','toolLibrarySf','childcareSf','coffeeSf','evShareSf'].reduce((sum, k) => sum + n(inputs, k), 0)).toLocaleString()} SF`, startup: better.startup, breakEvenRevenue: 500000 + ['cargoShareCost','refilleryCost','toolLibraryCost','childcareCost','coffeeCost','evShareCost'].reduce((sum, k) => sum + n(inputs, k), 0), rentCeiling, confirmed: false },
-  ];
+  return tierOrder.map(tier => {
+    const model = calculate({ ...inputs, hubTier: tier });
+    const year = model.years[0];
+    const fixedCosts = year.rent + year.labor + year.fleet + year.other;
+    const margin = year.revenue > 0 ? 1 - (year.cogs + year.damage) / year.revenue : tier === 'Good' ? 1 : 1 - n(inputs, 'damage') / 100;
+    return {
+      tier, site: tier === 'Good' ? 'Pods / roughly six parking spaces' : tier === 'Better' ? 'Light industrial leased space' : 'Visible storefront / civic hub',
+      sf: `${n(inputs, tier === 'Good' ? 'goodSf' : 'sf').toLocaleString()} SF`,
+      startup: model.startup,
+      breakEvenRevenue: margin > 0 ? fixedCosts / margin : null,
+      rentCeiling: (year.revenue - year.labor - year.fleet - year.other - year.cogs - year.damage) / 12,
+      profit: year.profit,
+    };
+  });
 }
 
-export function confirmationItems(inputs: Inputs) {
-  const keys = [
-    'goodPods','goodPodCost','goodTrikes','goodTrikeCost','goodStartup','goodRentMonthly','goodRevenue',
-    'cargoShareRev','cargoShareCost','cargoShareSf','refilleryRev','refilleryCost','refillerySf','toolLibraryRev','toolLibraryCost','toolLibrarySf','childcareRev','childcareCost','childcareSf','coffeeRev','coffeeCost','coffeeSf','evShareRev','evShareCost','evShareSf',
-  ];
-  return keys.filter(key => n(inputs, key) === 0).map(key => ({ key, label: key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()), note: needsConfirmation }));
+export function confirmationItems(inputs: Inputs, metadata: Record<string, Metadata> = {}, workspace?: Workspace) {
+  const items = fields.filter(field => field.confirm ? inputs[field.key] === undefined || metadata[field.key]?.validation !== false : metadata[field.key]?.validation === true)
+    .map(field => ({ key: field.key, label: field.label, note: needsConfirmation }));
+  for (const site of workspace?.sites ?? []) {
+    if (!site.tier) items.push({ key: `tier-${site.id}`, label: `${site.name}: tier unassigned`, note: needsConfirmation });
+    if (site.tier && (site.tier !== 'Better' && !site.scorecard?.tierWeights?.[site.tier] || weightsTotal(tierCriteria(site.tier).map(c => ({ ...c, weight: site.scorecard?.tierWeights?.[site.tier]?.[c.code] ?? (site.scorecard?.weightsTier === site.tier ? site.scorecard?.weights?.[c.code] : undefined) ?? c.weight }))) !== 100))
+      items.push({ key: `weights-${site.id}`, label: `${site.name}: ${site.tier} weights`, note: needsConfirmation });
+    if (!site.sf || !site.address || /TBD|Area only/i.test(site.address)) items.push({ key: `site-${site.id}`, label: `${site.name}: site details`, note: needsConfirmation });
+  }
+  for (const pin of tierPins) {
+    const location = workspace?.tierPinLocations?.[pin.id];
+    if (location?.lat === undefined || location.lng === undefined) items.push({ key: `pin-${pin.id}`, label: `${pin.label}: map coordinates`, note: needsConfirmation });
+  }
+  return items;
 }
