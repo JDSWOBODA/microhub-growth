@@ -4,7 +4,7 @@ import { tierDefinitions } from '@/lib/tiers';
 const styles: Record<HubTier, string> = {
   Good: 'bg-amber-300 text-amber-950 border-amber-400',
   Better: 'bg-neutral-900 text-amber-300 border-neutral-900',
-  Best: 'bg-violet-600 text-white border-violet-600',
+  Best: 'bg-neutral-950 text-white border-neutral-600',
 };
 
 export default function TierBadge({ tier, className = '' }: { tier?: HubTier; className?: string }) {
