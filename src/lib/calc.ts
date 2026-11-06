@@ -1,7 +1,9 @@
 import { bestFohLines, type Inputs } from './defaults';
+import { calculateNovember } from './novemberBaseline';
 export const n = (inputs: Inputs, key: string) => Number(inputs[key]) || 0;
 export type YearResult = { year: string; deliveries: number; logisticsRevenue: number; communityRevenue: number; revenue: number; rent: number; labor: number; fleet: number; other: number; cogs: number; damage: number; sharing: number; costs: number; profit: number; cumulative: number };
 export function calculate(i: Inputs) {
+  if (i.novEnabled === true) return calculateNovember(i);
   if (i.hubTier === 'Good') return calculateGood(i);
   let equipment = 0;
   let fleetAnnual = 0;

@@ -8,14 +8,16 @@ import { fields, type Metadata } from '@/lib/defaults';
 import { Panel } from '@/components/Financials';
 import { AssumptionInput } from '@/components/AssumptionInput';
 import { liveEngineLabel } from '@/lib/modelSources';
+import { modelLabel } from '@/lib/scottModel';
 export default function Assumptions() {
   const { active, setData } = useWorkspace();
   const [query, setQuery] = useState(''), [onlyValidation, setOnlyValidation] = useState(false);
-  const filtered = fields.filter(f => `${f.label} ${f.group} ${f.unit} ${active.metadata[f.key].source}`.toLowerCase().includes(query.toLowerCase()) && (!onlyValidation || active.metadata[f.key].validation || (f.validation && !f.confirm)));
+  const applicableFields = fields.filter(f => active.inputs.novEnabled === true ? f.key.startsWith('nov') || f.key === 'hubTier' : !f.key.startsWith('nov'));
+  const filtered = applicableFields.filter(f => `${f.label} ${f.group} ${f.unit} ${active.metadata[f.key].source}`.toLowerCase().includes(query.toLowerCase()) && (!onlyValidation || active.metadata[f.key].validation || (f.validation && !f.confirm)));
   const edit = (key: string, values: Partial<Metadata>) => setData(w => ({ ...w, scenarios: w.scenarios.map(s => s.id === active.id ? { ...s, metadata: { ...s.metadata, [key]: { ...s.metadata[key], ...values } } } : s) }));
   const exportCsv = () => {
     const escape = (v: unknown) => { const text = String(v); return `"${(/^[=+\-@\t\r]/.test(text) ? "'" : '') + text.replace(/"/g, '""')}"`; };
-    const rows = [['Calculation engine', 'Scenario', 'Group', 'Input', 'Value', 'Unit', 'Input source (file/version/sheet/cell)', 'Confidence', 'Needs validation'], ...fields.map(f => [liveEngineLabel, active.name, f.group, f.label, active.inputs[f.key], f.unit, active.metadata[f.key].source, active.metadata[f.key].confidence, active.metadata[f.key].validation || (!!f.validation && !f.confirm)])];
+    const rows = [['Calculation engine', 'Scenario', 'Group', 'Input', 'Value', 'Unit', 'Input source (file/version/sheet/cell)', 'Confidence', 'Needs validation'], ...applicableFields.map(f => [active.inputs.novEnabled ? modelLabel(active) : liveEngineLabel, active.name, f.group, f.label, active.inputs[f.key], f.unit, active.metadata[f.key].source, active.metadata[f.key].confidence, active.metadata[f.key].validation || (!!f.validation && !f.confirm)])];
     download('b-line-assumptions.csv', rows.map(r => r.map(escape).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
   };
   if (active.model === 'scott') return <div className="space-y-6"><h1>The assumptions behind the plan.</h1><ScottAssumptions /></div>;

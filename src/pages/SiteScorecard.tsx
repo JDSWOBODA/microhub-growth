@@ -1,3 +1,4 @@
+import NovemberSiteChecklist from '@/components/NovemberSiteChecklist';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { MapPin, ShieldCheck } from 'lucide-react';
@@ -39,6 +40,7 @@ export default function SiteScorecard() {
     <Panel className="space-y-4 p-5 sm:p-7"><div className="flex items-center gap-2"><ShieldCheck size={18} className="text-teal-700" /><h2>{tier} tier gates</h2></div><p className="text-xs text-muted-foreground">All gates must pass before a site can advance, regardless of the weighted score. Confirm each gate with evidence.</p><div className="space-y-2">{gates.map(gate => <label key={gate.label} className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm"><input type="checkbox" className="mt-0.5 accent-teal-700" checked={Boolean(site.scorecard?.gates?.[`${tier}:${gate.label}`])} onChange={e => setGate(gate.label, e.target.checked)} /><span><span className="font-semibold">{gate.label}</span><span className="block text-xs text-muted-foreground">{gate.detail}</span></span></label>)}</div><p className="text-xs font-medium text-muted-foreground">{summary.gatesPassed} of {summary.gateCount} gates confirmed.</p></Panel>
     {!site.tier && <p className="rounded-xl border border-amber-500 p-4 text-sm text-amber-900 dark:text-amber-200">Needs confirmation (Franklin/Emi): this site has no assigned tier. Better criteria are shown as a preview, not a tier decision.</p>}
     <TierWeights key={site.id + tier} site={site} />
+    <NovemberSiteChecklist key={site.id} site={site} />
     <p className="text-[11px] leading-relaxed text-muted-foreground">A completed scorecard is not site approval. Historical scores and evidence are preserved. Good and Best weights require confirmation; only valid saved weights affect scoring.</p>
   </div>;
 }

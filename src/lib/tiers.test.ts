@@ -160,7 +160,7 @@ describe('confirmation tracking', () => {
     expect(confirmationItems(active.inputs, active.metadata, w).some(i => i.key === `pin-${tierPins[0].id}`)).toBe(true);
   });
   it('starts unspecified economics at zero and omits invented coordinates', () => {
-    expect(fields.filter(f => f.confirm).every(f => f.value === 0)).toBe(true);
+    expect(fields.filter(f => f.confirm && !f.key.startsWith('nov')).every(f => f.value === 0)).toBe(true);
     expect(tierPins.every(pin => !('lat' in pin) && !('lng' in pin))).toBe(true);
     expect(initialWorkspace().sites.find(s => s.id === 'pike-place-pop-up')?.rent).toBe(0);
   });

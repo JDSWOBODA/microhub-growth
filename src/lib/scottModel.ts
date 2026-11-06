@@ -13,7 +13,7 @@ export const scottFields: Field[] = [
 export const scottDefaults: Inputs = Object.fromEntries(scottFields.map(field => [field.key,field.value]));
 export const scottMetadata: Record<string, Metadata> = Object.fromEntries(scottFields.map(field => [field.key,{ source: `Expansion Model-2026 ${field.group === 'Uses' || field.group === 'Sources' || field.group === 'Targets' ? 'S+U' : '1-HUB'}.csv · ${field.label}${field.key === 'sf' || field.key === 'targetMargin' ? ' (S+U setting)' : ''}`, confidence: 'med', validation: true }]));
 export function scottState(s: Scenario) { return s.scott ?? { inputs: { ...scottDefaults }, metadata: structuredClone(scottMetadata) }; }
-export function modelLabel(s: Scenario) { return s.model === 'scott' ? scottLabel : 'App annual planning engine'; }
+export function modelLabel(s: Scenario) { return s.model === 'scott' ? scottLabel : s.inputs.novEnabled ? 'November detailed pro forma · Franklin baseline' : 'App annual planning engine'; }
 export function calculateScott(inputs: Inputs) {
   const n = (key: string) => Number(inputs[key]);
   const revenue = n('delivery') + n('promo');

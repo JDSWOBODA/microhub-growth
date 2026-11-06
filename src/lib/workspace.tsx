@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { z } from 'zod';
-import { bestFohLines, defaultInputs, fields, initialWorkspace, seedSites, statuses, type Workspace, type Scenario, type InputValue } from './defaults';
+import { addNovemberBaselines, bestFohLines, defaultInputs, fields, initialWorkspace, seedSites, statuses, type Workspace, type Scenario, type InputValue } from './defaults';
 import { toast } from 'sonner';
 import { scottFields } from './scottModel';
 import { applySeattleRents } from './seattleRents';
@@ -13,10 +13,10 @@ fields.forEach(f => {
 const scottShape = Object.fromEntries(scottFields.map(f => [f.key,z.number().finite().min(0).max(f.max ?? 1e9)]));
 const metadata = z.object({ source: z.string(), confidence: z.enum(['low', 'med', 'high']), validation: z.boolean() });
 const schema = z.object({
-  version: z.literal(1), activeId: z.string(), seattleRentUpdate: z.literal(1).optional(), hubTierUpdate: z.literal(1).optional(),
+  version: z.literal(1), activeId: z.string(), seattleRentUpdate: z.literal(1).optional(), hubTierUpdate: z.literal(1).optional(), novemberUpdate: z.literal(1).optional(),
   tierPinLocations: z.record(z.object({ lat: z.number().finite().min(-90).max(90).optional(), lng: z.number().finite().min(-180).max(180).optional() })).optional(),
-  scenarios: z.array(z.object({ id: z.string(), name: z.string().min(1), city: z.string(), siteId: z.string().optional(), model: z.enum(['annual','scott']).optional(), scott: z.object({ inputs: z.object(scottShape), metadata: z.record(metadata) }).optional(), inputs: z.object(inputShape), metadata: z.record(metadata) })).min(1).max(500),
-  sites: z.array(z.object({ id: z.string(), name: z.string(), city: z.string(), address: z.string(), sf: z.number().finite().min(0), score: z.number().finite().min(0), neighborhood: z.string(), rent: z.number().finite().min(0), partner: z.string(), status: z.string(), notes: z.string(), tier: z.enum(['Good','Better','Best']).optional(), scorecard: z.object({ answers: z.record(z.object({ rating: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(), evidence: z.string().max(10000) })), weights: z.record(z.number().finite().min(0).max(100)).optional(), weightsTier: z.enum(['Good','Better','Best']).optional(), tierWeights: z.object({ Good: z.record(z.number().finite().min(0).max(100)).optional(), Better: z.record(z.number().finite().min(0).max(100)).optional(), Best: z.record(z.number().finite().min(0).max(100)).optional() }).optional(), gates: z.record(z.boolean()).optional() }).optional() })),
+  scenarios: z.array(z.object({ id: z.string(), name: z.string().min(1), city: z.string(), siteId: z.string().optional(), model: z.enum(['annual','scott']).optional(), novemberKind: z.enum(['Good','Better','Best','Redd','Alder']).optional(), scott: z.object({ inputs: z.object(scottShape), metadata: z.record(metadata) }).optional(), inputs: z.object(inputShape), metadata: z.record(metadata) })).min(1).max(500),
+  sites: z.array(z.object({ id: z.string(), name: z.string(), city: z.string(), address: z.string(), sf: z.number().finite().min(0), score: z.number().finite().min(0), neighborhood: z.string(), rent: z.number().finite().min(0), partner: z.string(), status: z.string(), notes: z.string(), tier: z.enum(['Good','Better','Best']).optional(), novemberAssessment: z.object({ features: z.record(z.object({ status: z.enum(['met','partial','missing','not-applicable']).optional(), owner: z.string().max(200), evidence: z.string().max(10000), points: z.number().int().min(1).max(5).optional() })), context: z.record(z.string().max(10000)) }).optional(), scorecard: z.object({ answers: z.record(z.object({ rating: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(), evidence: z.string().max(10000) })), weights: z.record(z.number().finite().min(0).max(100)).optional(), weightsTier: z.enum(['Good','Better','Best']).optional(), tierWeights: z.object({ Good: z.record(z.number().finite().min(0).max(100)).optional(), Better: z.record(z.number().finite().min(0).max(100)).optional(), Best: z.record(z.number().finite().min(0).max(100)).optional() }).optional(), gates: z.record(z.boolean()).optional() }).optional() })),
   partners: z.array(z.object({ id: z.string(), org: z.string(), contact: z.string(), role: z.string(), city: z.string(), type: z.string(), status: z.enum(statuses), lastTouch: z.string(), nextStep: z.string(), notes: z.string() })),
 }).superRefine((w, ctx) => {
   if (!w.scenarios.some(s => s.id === w.activeId)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Active scenario is missing' });
@@ -51,7 +51,7 @@ function migrateWorkspace(raw: unknown): unknown {
     for (const gate of tierDefinitions[tier].gates) if (gates[gate.label] !== undefined) gates[`${tier}:${gate.label}`] = gates[gate.label];
     return { ...site, scorecard: { ...site.scorecard, gates } };
   });
-  return w;
+  return addNovemberBaselines(w);
 }
 export function parseWorkspace(text: string): Workspace { return schema.parse(migrateWorkspace(JSON.parse(text))) as Workspace; }
 const KEY = 'b-line-microhub-v1';
@@ -63,6 +63,7 @@ const Context = createContext<{ data: Workspace; setData: React.Dispatch<React.S
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Workspace>(load);
   useEffect(() => { if (data.seattleRentUpdate !== 1) setData(applySeattleRents); }, [data.seattleRentUpdate]);
+  useEffect(() => { if (data.novemberUpdate !== 1) setData(w => parseWorkspace(JSON.stringify(w))); }, [data.novemberUpdate]);
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { toast.error('Browser storage is full or unavailable. Export JSON to keep your work.'); } }, [data]);
   const active = data.scenarios.find(s => s.id === data.activeId)!;
   const updateInput = (key: string, value: InputValue) => setData(w => ({ ...w, scenarios: w.scenarios.map(s => s.id === w.activeId ? { ...s, inputs: { ...s.inputs, [key]: value } } : s) }));

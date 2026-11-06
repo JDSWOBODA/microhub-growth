@@ -1,3 +1,4 @@
+import NovemberModel from '@/components/NovemberModel';
 import ScottFinancials from '@/components/ScottFinancials';
 import ScottAssumptions from '@/components/ScottAssumptions';
 import ModelSelector from '@/components/ModelSelector';
@@ -24,6 +25,7 @@ export default function HubModel() {
   const groups = [{ label: 'Space', icon: Building2 }, { label: 'Fleet', icon: Bike }, { label: 'Labor', icon: Users }, { label: 'Volume', icon: Package }, { label: 'Other costs', icon: Wallet }, { label: 'Community', icon: Store }, { label: 'Good · micro pods', icon: Boxes }, { label: 'Best · front of house', icon: Home }, { label: 'Funding', icon: Wallet }].filter(g => tier === 'Good' ? g.label === 'Good · micro pods' : g.label !== 'Good · micro pods' && (tier === 'Best' || g.label !== 'Best · front of house'));
   const visibleTab = groups.some(g => g.label === tab) ? tab : tierTab[tier];
   const footprint = n(active.inputs, tier === 'Good' ? 'goodSf' : 'sf');
+  if (active.inputs.novEnabled === true && active.model !== 'scott') return <NovemberModel key={active.id} />;
   if (active.model === 'scott') return <div className="space-y-6"><h1>Scott’s hub model.</h1><ModelSelector /><ScottAssumptions /><ScottFinancials scenario={active} /></div>;
   return <div className="space-y-6"><div><div className="eyebrow">App annual planning engine</div><h1 className="mt-2">Make the numbers work.</h1><p className="mt-2 text-sm text-muted-foreground">Adjust assumptions to explore costs, funding and three-year projections for your active scenario.</p></div>
     <ModelSelector />

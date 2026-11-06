@@ -134,7 +134,7 @@ export function tierComparison(inputs: Inputs) {
 }
 
 export function confirmationItems(inputs: Inputs, metadata: Record<string, Metadata> = {}, workspace?: Workspace) {
-  const items = fields.filter(field => field.confirm ? inputs[field.key] === undefined || metadata[field.key]?.validation !== false : metadata[field.key]?.validation === true)
+  const items = fields.filter(field => inputs.novEnabled ? field.key.startsWith('nov') : !field.key.startsWith('nov')).filter(field => field.confirm ? inputs[field.key] === undefined || metadata[field.key]?.validation !== false : metadata[field.key]?.validation === true)
     .map(field => ({ key: field.key, label: field.label, note: needsConfirmation }));
   for (const site of workspace?.sites ?? []) {
     if (!site.tier) items.push({ key: `tier-${site.id}`, label: `${site.name}: tier unassigned`, note: needsConfirmation });

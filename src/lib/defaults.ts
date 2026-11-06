@@ -1,4 +1,6 @@
 import type { SiteScorecard } from './siteScorecard';
+import { novemberFields, novemberOverrides, novemberSource } from './novemberBaseline';
+import type { NovemberAssessment } from './novemberCriteria';
 
 export type InputValue = number | string | boolean;
 export type Inputs = Record<string, InputValue>;
@@ -69,6 +71,7 @@ export const fields: Field[] = [
     num(`${key}Hours`, `${label} · weekly hours`, 'hours/week', 'Community', 40, 168),
     num(`${key}Burden`, `${label} · payroll burden`, '%', 'Community', 20, 100),
   ]),
+  ...novemberFields,
   ...goodFields,
   ...bestFohFields,
   { key: 'grantName', label: 'Equipment grant', unit: 'program', group: 'Funding', value: 'LACI/DOE — equipment only' },
@@ -78,8 +81,8 @@ export const fields: Field[] = [
 ];
 export const defaultInputs: Inputs = Object.fromEntries(fields.map(f => [f.key, f.value]));
 export type Metadata = { source: string; confidence: 'low' | 'med' | 'high'; validation: boolean };
-export type Scenario = { id: string; name: string; city: string; siteId?: string; model?: 'annual' | 'scott'; scott?: { inputs: Inputs; metadata: Record<string, Metadata> }; inputs: Inputs; metadata: Record<string, Metadata> };
-export type Site = { id: string; name: string; city: string; address: string; sf: number; score: number; neighborhood: string; rent: number; partner: string; status: string; notes: string; tier?: HubTier; scorecard?: SiteScorecard };
+export type Scenario = { id: string; name: string; city: string; siteId?: string; model?: 'annual' | 'scott'; novemberKind?: 'Good' | 'Better' | 'Best' | 'Redd' | 'Alder'; scott?: { inputs: Inputs; metadata: Record<string, Metadata> }; inputs: Inputs; metadata: Record<string, Metadata> };
+export type Site = { id: string; name: string; city: string; address: string; sf: number; score: number; neighborhood: string; rent: number; partner: string; status: string; notes: string; tier?: HubTier; novemberAssessment?: NovemberAssessment; scorecard?: SiteScorecard };
 export const statuses = ['to contact', 'reached out', 'meeting set', 'met', 'follow-up'] as const;
 export type Partner = { id: string; org: string; contact: string; role: string; city: string; type: string; status: typeof statuses[number]; lastTouch: string; nextStep: string; notes: string };
 export function makeScenario(name: string, city = 'Seattle', overrides: Inputs = {}): Scenario {
@@ -95,10 +98,24 @@ export const seedPartners: Partner[] = [
   ['SDOT', 'Seattle', 'City/agency', 'Low Pollution Neighborhoods + Freight teams'], ['SODO BIA', 'Seattle', 'BIA', ''], ['Sound Break Bike Shop', 'Seattle', 'business partner', 'Pioneer Square'], ['Georgetown Brewing', 'Seattle', 'business partner', ''], ['Grand Central Bakery', 'Seattle', 'business partner', ''], ['Puget Sound Food Hub', 'Seattle', 'business partner', ''], ['LACI', 'Los Angeles', 'funder', 'Equipment funding / feasibility'], ['Cityfi', 'Multi-city', 'business partner', ''],
 ].map(([org, city, type, notes], i) => ({ id: `partner-${i}`, org, city, type, notes, contact: '', role: '', status: 'to contact', lastTouch: '', nextStep: '' }));
 export type PinLocation = { lat?: number; lng?: number };
-export type Workspace = { version: 1; scenarios: Scenario[]; activeId: string; sites: Site[]; partners: Partner[]; seattleRentUpdate?: 1; hubTierUpdate?: 1; tierPinLocations?: Record<string, PinLocation> };
+export type Workspace = { version: 1; scenarios: Scenario[]; activeId: string; sites: Site[]; partners: Partner[]; seattleRentUpdate?: 1; hubTierUpdate?: 1; novemberUpdate?: 1; tierPinLocations?: Record<string, PinLocation> };
 export function initialWorkspace(): Workspace {
   const seattle = makeScenario('Seattle – 1-Hub'); seattle.siteId = 'seattle';
   const stanford = makeScenario('LA – Stanford Ave', 'Los Angeles', { sf: 11300 }); stanford.siteId = 'stanford';
   const national = makeScenario('LA – National Blvd', 'Los Angeles', { sf: 2341, rent: 30 }); national.siteId = 'national';
-  return { version: 1, scenarios: [seattle, stanford, national], activeId: seattle.id, sites: structuredClone(seedSites), partners: structuredClone(seedPartners), hubTierUpdate: 1, tierPinLocations: {} };
+  return addNovemberBaselines({ version: 1, scenarios: [seattle, stanford, national], activeId: seattle.id, sites: structuredClone(seedSites), partners: structuredClone(seedPartners), hubTierUpdate: 1, tierPinLocations: {} });
+}
+
+export function addNovemberBaselines(workspace: Workspace): Workspace {
+  if (workspace.novemberUpdate === 1) return workspace;
+  const additions: Scenario[] = (['Good', 'Better', 'Best', 'Redd', 'Alder'] as const).map(kind => {
+    const actual = kind === 'Redd' || kind === 'Alder';
+    const tier: HubTier = actual ? 'Better' : kind;
+    const scenario = makeScenario(actual ? kind === 'Redd' ? 'Redd · current ops (actuals unconfirmed)' : 'Alder St · 2020 ops (actuals unconfirmed)' : 'November baseline · ' + kind, 'Portland', novemberOverrides(tier, actual));
+    scenario.id = 'nov-20261101-' + kind.toLowerCase();
+    scenario.novemberKind = kind;
+    for (const field of novemberFields) scenario.metadata[field.key] = { source: actual ? 'Actual operating data not supplied — Needs confirmation (Franklin/Emi)' : novemberSource + '; lower-end asset costs selected by user; fleet type split, wage rates, paid hours and annual weeks need confirmation', confidence: 'low', validation: true };
+    return scenario;
+  });
+  return { ...workspace, novemberUpdate: 1, scenarios: [...workspace.scenarios, ...additions.filter(s => !workspace.scenarios.some(existing => existing.id === s.id))] };
 }
