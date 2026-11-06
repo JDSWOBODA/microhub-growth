@@ -1,6 +1,7 @@
 import type { SiteScorecard } from './siteScorecard';
 import { novemberFields, novemberOverrides, novemberSource } from './novemberBaseline';
 import type { NovemberAssessment } from './novemberCriteria';
+import { addLogisticsReferences } from './logisticsReference';
 
 export type InputValue = number | string | boolean;
 export type Inputs = Record<string, InputValue>;
@@ -98,7 +99,7 @@ export const seedPartners: Partner[] = [
   ['SDOT', 'Seattle', 'City/agency', 'Low Pollution Neighborhoods + Freight teams'], ['SODO BIA', 'Seattle', 'BIA', ''], ['Sound Break Bike Shop', 'Seattle', 'business partner', 'Pioneer Square'], ['Georgetown Brewing', 'Seattle', 'business partner', ''], ['Grand Central Bakery', 'Seattle', 'business partner', ''], ['Puget Sound Food Hub', 'Seattle', 'business partner', ''], ['LACI', 'Los Angeles', 'funder', 'Equipment funding / feasibility'], ['Cityfi', 'Multi-city', 'business partner', ''],
 ].map(([org, city, type, notes], i) => ({ id: `partner-${i}`, org, city, type, notes, contact: '', role: '', status: 'to contact', lastTouch: '', nextStep: '' }));
 export type PinLocation = { lat?: number; lng?: number };
-export type Workspace = { version: 1; scenarios: Scenario[]; activeId: string; sites: Site[]; partners: Partner[]; seattleRentUpdate?: 1; hubTierUpdate?: 1; novemberUpdate?: 1; tierPinLocations?: Record<string, PinLocation> };
+export type Workspace = { version: 1; scenarios: Scenario[]; activeId: string; sites: Site[]; partners: Partner[]; seattleRentUpdate?: 1; hubTierUpdate?: 1; novemberUpdate?: 1; logisticsReferenceUpdate?: 1; tierPinLocations?: Record<string, PinLocation> };
 export function initialWorkspace(): Workspace {
   const seattle = makeScenario('Seattle – 1-Hub'); seattle.siteId = 'seattle';
   const stanford = makeScenario('LA – Stanford Ave', 'Los Angeles', { sf: 11300 }); stanford.siteId = 'stanford';
@@ -107,7 +108,7 @@ export function initialWorkspace(): Workspace {
 }
 
 export function addNovemberBaselines(workspace: Workspace): Workspace {
-  if (workspace.novemberUpdate === 1) return workspace;
+  if (workspace.novemberUpdate === 1) return addLogisticsReferences(workspace);
   const additions: Scenario[] = (['Good', 'Better', 'Best', 'Redd', 'Alder'] as const).map(kind => {
     const actual = kind === 'Redd' || kind === 'Alder';
     const tier: HubTier = actual ? 'Better' : kind;
@@ -117,5 +118,5 @@ export function addNovemberBaselines(workspace: Workspace): Workspace {
     for (const field of novemberFields) scenario.metadata[field.key] = { source: actual ? 'Actual operating data not supplied — Needs confirmation (Franklin/Emi)' : novemberSource + '; lower-end asset costs selected by user; fleet type split, wage rates, paid hours and annual weeks need confirmation', confidence: 'low', validation: true };
     return scenario;
   });
-  return { ...workspace, novemberUpdate: 1, scenarios: [...workspace.scenarios, ...additions.filter(s => !workspace.scenarios.some(existing => existing.id === s.id))] };
+  return addLogisticsReferences({ ...workspace, novemberUpdate: 1, scenarios: [...workspace.scenarios, ...additions.filter(s => !workspace.scenarios.some(existing => existing.id === s.id))] });
 }

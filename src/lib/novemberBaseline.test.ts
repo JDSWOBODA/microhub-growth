@@ -8,16 +8,17 @@ import { parseWorkspace } from './workspace';
 const findFeature = (label: string) => novemberFeatures.find(feature => feature.label === label)!;
 
 describe('November source baselines', () => {
-  it('adds five independent scenarios once without modifying existing inputs or active selection', () => {
+  it('adds five original scenarios and three reference copies once without changing existing inputs or selection', () => {
     const w = initialWorkspace();
     const oldScenarios = structuredClone(w.scenarios.filter(s => !s.novemberKind));
-    expect(w.scenarios.filter(s => s.novemberKind)).toHaveLength(5);
+    expect(w.scenarios.filter(s => s.novemberKind && !s.inputs.nov_referenceSource)).toHaveLength(5);
+    expect(w.scenarios.filter(s => s.inputs.nov_referenceSource)).toHaveLength(3);
     expect(w.activeId).toBe(oldScenarios[0].id);
     expect(addNovemberBaselines(w)).toBe(w);
     expect(w.scenarios.filter(s => !s.novemberKind)).toEqual(oldScenarios);
     const loaded = parseWorkspace(JSON.stringify(w));
     expect(loaded.scenarios.filter(s => !s.novemberKind)).toEqual(oldScenarios);
-    expect(loaded.scenarios.filter(s => s.novemberKind)).toHaveLength(5);
+    expect(loaded.scenarios.filter(s => s.novemberKind)).toHaveLength(8);
   });
   it('migrates older workspaces once and respects deleted or edited baselines afterwards', () => {
     const w = initialWorkspace();

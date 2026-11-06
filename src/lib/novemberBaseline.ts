@@ -2,6 +2,12 @@ import type { Field, HubTier, Inputs } from './defaults';
 import type { YearResult } from './calc';
 
 export const novemberSource = 'Franklin Jones · Proforma baseline attributes · November 1, 2026';
+export const frontOfHouseDrivers = [
+  { key: 'nov_fohBuildoutNotes', label: 'Space and build-out', prompt: 'Describe fit-out, utilities, accessibility and shared-space needs; note what is supplied by the landlord or operator.' },
+  { key: 'nov_fohStaffNotes', label: 'Staffing and opening hours', prompt: 'Describe coverage, opening hours and whether hub staff or a partner would run the space.' },
+  { key: 'nov_fohPartnerNotes', label: 'Partner responsibilities and cost exposure', prompt: 'Describe who pays rent, utilities, maintenance, insurance and programming; distinguish incremental costs from shared logistics costs.' },
+  { key: 'nov_fohEvidenceNotes', label: 'Evidence and unresolved drivers', prompt: 'Record quotes, partner commitments, directional cost ranges and open questions. Notes do not become calculated amounts.' },
+];
 export const assetLines = [
   { key: 'trike', label: 'Trikes', low: 16000, high: 20000 },
   { key: 'quad', label: 'Quads', low: 20000, high: 25000 },
@@ -24,6 +30,10 @@ export const revenueLines = [
 const f = (key: string, label: string, unit: string, group: string, value = 0, max?: number): Field => ({ key: `nov_${key}`, label, unit, group: `November · ${group}`, value, max, confirm: true });
 export const novemberFields: Field[] = [
   { key: 'novEnabled', label: 'November detailed engine', unit: 'on/off', group: 'November · Mode', value: false },
+  { key: 'nov_referenceSource', label: 'Logistics starting baseline provenance', unit: 'source', group: 'November · Logistics baseline', value: '' },
+  f('referenceLaborAnnual', 'Reference annual wages · delivery + GM + admin', '$/year', 'Logistics baseline'),
+  f('referenceOverheadAnnual', 'Reference annual non-rent overhead · excludes wages', '$/year', 'Logistics baseline'),
+  ...frontOfHouseDrivers.map(driver => ({ key: driver.key, label: driver.label, unit: 'notes', group: 'November · Front-of-house planning', value: '', confirm: true })),
   f('hours', 'Asset operating hours / day (research schedule)', 'hours/day', 'Operations', 6, 24),
   f('days', 'Asset operating days / week (research schedule)', 'days/week', 'Operations', 6, 7),
   f('weeks', 'Operating weeks / year', 'weeks/year', 'Operations', 0, 53),
@@ -65,10 +75,10 @@ export function calculateNovember(i: Inputs) {
   const sum = (prefix: string, lines: string[]) => lines.reduce((total, _, index) => total + n(`${prefix}${index}`), 0);
   const equipment = assetLines.reduce((total, a) => total + n(`${a.key}Count`) * n(`${a.key}Unit`), 0);
   const startup = equipment + sum('capex', capexLines);
-  const wages = staffLines.reduce((total, _, index) => total + n(`staff${index}Count`) * n(`staff${index}Rate`) * n(`staff${index}Hours`) * n('weeks'), 0);
+  const wages = n('referenceLaborAnnual') + staffLines.reduce((total, _, index) => total + n(`staff${index}Count`) * n(`staff${index}Rate`) * n(`staff${index}Hours`) * n('weeks'), 0);
   const labor = wages + sum('payroll', payrollLines);
   const cogs = sum('cogs', cogsLines);
-  const overheadGross = sum('overhead', overheadLines);
+  const overheadGross = n('referenceOverheadAnnual') + sum('overhead', overheadLines);
   const hqCredit = Math.min(n('hqCredit'), overheadGross);
   const other = overheadGross - hqCredit;
   const revenueGroups = revenueLines.map((line, group) => line.labels.reduce((total, _, index) => total + n(`rev${group}_${index}`), 0));
