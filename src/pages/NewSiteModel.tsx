@@ -1,0 +1,73 @@
+import { useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Check, Building2, Bike, ListChecks, Store } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Panel } from '@/components/Financials';
+import { useWorkspace } from '@/lib/workspace';
+import type { HubTier } from '@/lib/defaults';
+import { tierDefinitions, tierOrder } from '@/lib/tiers';
+import { createGuidedSiteModel, initialAnswers, logisticsQuestions, planningFlags, setupBaseline, type SetupMethod } from '@/lib/guidedModel';
+import { calculateNovember } from '@/lib/novemberBaseline';
+import { money } from '@/lib/calc';
+
+const steps = ['Site & hub', 'Starting point', 'Logistics', 'Front of house', 'Review'];
+const methods: { id: SetupMethod; title: string; description: string; icon: typeof Bike }[] = [
+  { id: 'scott', title: 'Scott / B-Line reference', description: 'Start with sourced annual operating totals and November fleet assumptions. Edit for this site; not verified actuals or tier-scaled forecasts.', icon: Bike },
+  { id: 'november', title: 'November hub preset', description: 'Use the selected hub tier’s fleet quantities and low-end equipment prices. Supply your own wages, rent, overhead and revenue.', icon: Building2 },
+  { id: 'questions', title: 'Walk me through the questions', description: 'Build from your own space, fleet, costs and revenue. Leave unknowns blank and keep them clearly flagged.', icon: ListChecks },
+];
+
+export default function NewSiteModel() {
+  const { data, setData } = useWorkspace();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const existing = data.sites.find(s => s.id === params.get('site'));
+  const [step, setStep] = useState(0);
+  const [name, setName] = useState(existing?.name ?? '');
+  const [city, setCity] = useState(existing?.city ?? '');
+  const [address, setAddress] = useState(existing?.address ?? '');
+  const [tier, setTier] = useState<HubTier>(existing?.tier ?? 'Better');
+  const [method, setMethod] = useState<SetupMethod>('scott');
+  const answersFor = (t: HubTier, m: SetupMethod) => {
+    const values = initialAnswers(setupBaseline(t, m));
+    if (existing) {
+      values.nov_area = existing.sf > 0 ? String(existing.sf) : '';
+      values.nov_rent = existing.sf > 0 && existing.rent > 0 ? String(existing.sf * existing.rent) : '';
+    }
+    return values;
+  };
+  const [answers, setAnswers] = useState<Record<string, string>>(() => answersFor(tier, 'scott'));
+  const [fohMode, setFohMode] = useState<'deferred' | 'planning'>('deferred');
+  const [fohNotes, setFohNotes] = useState('');
+  const validAnswers = logisticsQuestions.every(q => !answers[q.key]?.trim() || Number.isFinite(Number(answers[q.key])) && Number(answers[q.key]) >= 0 && Number(answers[q.key]) <= 1e9);
+  const canContinue = step === 0 ? !!name.trim() && !!city.trim() : step === 2 ? validAnswers : true;
+  const choose = (t: HubTier, m: SetupMethod) => {
+    if (t === tier && m === method) return;
+    if (JSON.stringify(answers) !== JSON.stringify(answersFor(tier, method)) && !confirm('Changing the starting point resets your edited logistics answers to that baseline. Continue?')) return;
+    setTier(t); setMethod(m); setAnswers(answersFor(t, m));
+  };
+  const build = () => createGuidedSiteModel({ name, city, address, tier, method, answers, fohMode, fohNotes, existingSite: existing });
+  const finish = () => {
+    if (!name.trim() || !city.trim() || !validAnswers) return;
+    const { site, scenario } = build();
+    setData(w => ({ ...w, sites: existing ? w.sites : [...w.sites, site], scenarios: [...w.scenarios, scenario], activeId: scenario.id }));
+    navigate('/model');
+  };
+  const preview = step === 4 && validAnswers ? build().scenario : null;
+  const result = preview ? calculateNovember(preview.inputs) : null;
+  const flags = preview ? planningFlags(preview) : null;
+  return <div className="mx-auto max-w-3xl space-y-6">
+    <div><Link to={existing ? '/sites' : '/'} className="inline-flex items-center gap-2 text-xs font-semibold text-teal-800"><ArrowLeft size={14} />Exit without creating a model</Link><div className="eyebrow mt-6">Guided site modeling</div><h1 className="mt-2">{existing ? 'Model this site.' : 'Let’s build your next hub.'}</h1><p className="mt-3 text-sm text-muted-foreground">A few choices first. Logistics and back of house lead; optional community uses come later.</p></div>
+    <ol aria-label="Modeling progress" className="grid grid-cols-5 gap-2">{steps.map((label, index) => <li key={label} aria-current={index === step ? 'step' : undefined} className={`border-t-4 pt-3 ${index <= step ? 'border-teal-700' : 'border-border'}`}><span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${index <= step ? 'bg-teal-800 text-white' : 'bg-secondary text-muted-foreground'}`}>{index < step ? <Check size={13} /> : index + 1}</span><span className={`mt-2 block text-[10px] sm:text-xs ${index === step ? 'font-semibold' : 'text-muted-foreground'}`}>{label}</span></li>)}</ol>
+    <Panel className="space-y-6 p-5 sm:p-8">
+      {step === 0 && <><div><h2 className="text-xl">Where will the hub operate?</h2><p className="mt-2 text-xs text-muted-foreground">You don’t need a signed lease. A working name and city are enough.</p></div><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Site / working name<Input className="mt-2 h-11 rounded-xl" value={name} maxLength={120} onChange={e => setName(e.target.value)} placeholder="e.g. North neighborhood hub" /></label><label className="text-sm font-medium">City<Input className="mt-2 h-11 rounded-xl" value={city} maxLength={120} onChange={e => setCity(e.target.value)} placeholder="City or market" /></label><label className="text-sm font-medium sm:col-span-2">Address <span className="font-normal text-muted-foreground">(optional)</span><Input className="mt-2 h-11 rounded-xl" value={address} maxLength={250} onChange={e => setAddress(e.target.value)} placeholder="Property or neighborhood, if known" /></label></div><div><h3 className="text-sm font-semibold">Which hub model fits your intent?</h3><p className="mt-2 text-xs text-muted-foreground">Hub type and financial assumptions are separate choices. Selecting Best does not require you to cost front of house now.</p><div role="group" aria-label="Hub model" className="mt-4 grid gap-3 sm:grid-cols-3">{tierOrder.map(t => <button key={t} aria-pressed={tier === t} onClick={() => choose(t, method)} className={`rounded-2xl border-2 p-4 text-left ${tier === t ? 'border-teal-700 bg-secondary' : 'border-border hover:bg-secondary/50'}`}><span className="text-base font-semibold">{t}</span><span className="mt-2 block text-xs font-medium">{tierDefinitions[t].title}</span><span className="mt-2 block text-xs text-muted-foreground">{t === 'Good' ? 'Small standalone logistics / pods' : t === 'Better' ? 'Back-of-house hub + optional bike share' : 'Logistics + optional community front of house'}</span></button>)}</div></div>{existing && <p className="rounded-xl bg-secondary p-3 text-xs text-muted-foreground">This creates a new model linked to {existing.name}. The saved site record and earlier models will not be changed.</p>}</>}
+      {step === 1 && <><div><h2 className="text-xl">Choose your financial starting point.</h2><p className="mt-2 text-sm text-muted-foreground">You can use a reference and edit it, or answer the questions from scratch.</p></div><div className="space-y-3" role="group" aria-label="Financial starting point">{methods.map(item => <button key={item.id} aria-pressed={method === item.id} onClick={() => choose(tier, item.id)} className={`flex w-full items-start gap-4 rounded-2xl border-2 p-5 text-left ${method === item.id ? 'border-teal-700 bg-secondary' : 'border-border hover:bg-secondary/50'}`}><item.icon size={22} className="mt-1 shrink-0 text-teal-700" /><div><span className="text-sm font-semibold">{item.title}</span><span className="mt-2 block text-xs leading-relaxed text-muted-foreground">{item.description}</span></div>{method === item.id && <Check size={17} className="ml-auto shrink-0 text-teal-700" />}</button>)}</div><p className="text-xs leading-relaxed text-muted-foreground">All three paths use the logistics-first annual pro forma. Values repeat annually without assumed growth, financing or awarded grants. Other calculation engines remain available in the existing advanced workspace.</p></>}
+      {step === 2 && <><div><h2 className="text-xl">Back of house & logistics.</h2><p className="mt-2 text-sm text-muted-foreground">{method === 'questions' ? 'Enter what you know. Blank answers stay flagged, not silently treated as complete.' : 'Review the starting values and replace them for your site. Supplied values are still provisional.'}</p></div>{['Space', 'Fleet', 'Operations'].map(section => <section key={section} className="space-y-4 rounded-2xl bg-secondary/50 p-4"><h3 className="text-sm font-semibold">{section}</h3><div className="grid gap-4 sm:grid-cols-2">{logisticsQuestions.filter(q => q.section === section).map(q => <label key={q.key} className="text-xs font-medium">{q.label}<div className="mt-2 flex items-center gap-2"><Input type="number" step="any" min={0} max={1e9} className="h-10 rounded-xl bg-background" value={answers[q.key] ?? ''} onChange={e => setAnswers(a => ({ ...a, [q.key]: e.target.value }))} placeholder="Unknown — leave blank" /><span className="min-w-12 text-[10px] text-muted-foreground">{q.unit}</span></div></label>)}</div></section>)}<p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-950">Use annual wages including all staff, and overhead including payroll extras, insurance, utilities, fleet maintenance and other non-rent costs. These totals replace detailed staffing amounts at setup; don’t enter the same costs again later. Revenue lines must represent distinct billings. {method !== 'questions' && 'Preset bikes, reserves and any e-van procurement are retained; the full equipment list is shown in Review.'}</p>{!validAnswers && <p role="alert" className="text-xs font-semibold text-rose-700">Amounts must be finite numbers between 0 and 1 billion, or blank.</p>}</>}
+      {step === 3 && <><div><Store size={24} className="mb-3 text-teal-700" /><h2 className="text-xl">Front of house is optional.</h2><p className="mt-2 text-sm text-muted-foreground">Don’t let incomplete community-use assumptions block the logistics plan.</p></div><div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="Front-of-house planning choice">{([{ id: 'deferred', title: 'Leave it for later', text: 'Mark as deferred / not costed. No front-of-house income is assumed.' }, { id: 'planning', title: 'Capture a qualitative plan', text: 'Record partners and operating intent. Financial amounts stay incomplete until supported.' }] as const).map(item => <button key={item.id} aria-pressed={fohMode === item.id} onClick={() => setFohMode(item.id)} className={`rounded-2xl border-2 p-5 text-left ${fohMode === item.id ? 'border-teal-700 bg-secondary' : 'border-border'}`}><span className="text-sm font-semibold">{item.title}</span><span className="mt-2 block text-xs leading-relaxed text-muted-foreground">{item.text}</span></button>)}</div>{fohMode === 'planning' && <label className="block text-sm font-medium">What might happen here?<Textarea className="mt-3 min-h-32 rounded-xl" maxLength={2000} value={fohNotes} onChange={e => setFohNotes(e.target.value)} placeholder="Community uses, operator, staffing, shared space, who pays, and open questions…" /></label>}<p className="text-xs text-muted-foreground">This choice is saved with the model. You can expand optional front-of-house planning later; notes never create calculated costs or income.</p></>}
+      {step === 4 && preview && result && flags && <><div><h2 className="text-xl">Your logistics plan is ready to explore.</h2><p className="mt-2 text-sm text-muted-foreground">{name} · {city} · {tier} hub · {methods.find(m => m.id === method)?.title}</p></div><div className="grid gap-3 sm:grid-cols-3">{[['Annual revenue', result.years[0].revenue], ['Annual costs', result.years[0].costs], ['Startup budget', result.startup]].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-secondary p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-xl font-semibold">{money(Number(value))}</p></div>)}</div><div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-950"><p className="font-semibold">Provisional feasibility model · not validated</p><p>{flags.missing.length ? `Still unknown: ${flags.missing.map(q => q.label).join(', ')}.` : 'Core logistics amounts are supplied. Evidence, lease terms, complete cost coverage and site suitability still require confirmation.'}</p><p>{flags.foh}</p><p>Blank amounts calculate as zero and can overstate viability. Startup is separate from annual costs. No growth or grant award is assumed.</p></div><details className="rounded-xl border border-border p-4"><summary className="cursor-pointer text-xs font-semibold">Review all included fleet purchases</summary><ul className="mt-3 space-y-2 text-xs text-muted-foreground">{['trike', 'quad', 'trailer', 'bike', 'evan'].map(key => <li key={key}>{key === 'evan' ? 'E-vans' : key === 'trike' ? 'Trikes / quads' : key === 'bike' ? 'Cargo bikes' : key === 'trailer' ? 'Trailers' : 'Quads'}: {String(preview.inputs[`nov_${key}Count`])} × {money(Number(preview.inputs[`nov_${key}Unit`]))}</li>)}</ul><p className="mt-3 text-xs text-muted-foreground">Reserve count is a subset of trikes / quads. Verify printed low-end prices, especially the e-van price, before procurement.</p></details><p className="text-xs text-muted-foreground">Creating the model saves {existing ? 'a new scenario linked to the existing site' : 'a new site and linked scenario'} in this browser. Your previous work stays unchanged.</p></>}
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-5"><Button variant="outline" className="rounded-xl" disabled={step === 0} onClick={() => setStep(s => s - 1)}><ArrowLeft size={14} className="mr-2" />Back</Button><Button className="h-11 rounded-xl px-5" disabled={!canContinue} onClick={step === 4 ? finish : () => setStep(s => s + 1)}>{step === 4 ? 'Create site model' : 'Continue'}<ArrowRight size={14} className="ml-2" /></Button></div>
+    </Panel>
+  </div>;
+}

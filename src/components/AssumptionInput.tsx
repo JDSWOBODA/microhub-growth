@@ -3,7 +3,11 @@ import { Switch } from '@/components/ui/switch';
 import type { Field } from '@/lib/defaults';
 import { useWorkspace } from '@/lib/workspace';
 export function AssumptionInput({ field, compact = false }: { field: Field; compact?: boolean }) {
-  const { active, updateInput } = useWorkspace();
+  const { active, updateInput: saveInput, setData } = useWorkspace();
+  const updateInput = (key: string, value: number | string | boolean) => {
+    if (!active.inputs.plannerGuided) { saveInput(key, value); return; }
+    setData(w => ({ ...w, scenarios: w.scenarios.map(s => s.id === w.activeId ? { ...s, inputs: { ...s.inputs, [key]: value }, metadata: { ...s.metadata, [key]: { ...s.metadata[key], source: s.metadata[key]?.source === 'Not supplied in guided setup' ? 'User-entered guided assumption; not verified site actuals' : s.metadata[key].source, validation: true } } } : s) }));
+  };
   const value = active.inputs[field.key];
   return <label className={`block ${compact ? 'min-w-[120px]' : ''}`}><div className="mb-1.5 flex items-center justify-between gap-2"><span className="text-xs font-medium">{field.label}</span>{!compact && <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Assumption</span>}</div><div className="flex items-center gap-2">{typeof field.value === 'boolean' ? <Switch checked={Boolean(value)} onCheckedChange={v => updateInput(field.key, v)} className="data-[state=checked]:bg-teal-700" /> : field.options ? <select className="form-select w-full" value={String(value)} onChange={e => updateInput(field.key, e.target.value)}>{field.options.map(o => <option key={o}>{o}</option>)}</select> : <Input className="h-9 rounded-lg bg-background text-xs" type={typeof field.value === 'number' ? 'number' : field.unit === 'date' ? 'date' : 'text'} min={0} max={field.max ?? 1e9} step="any" value={String(value)} onChange={e => { if (typeof field.value === 'number') { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0 && v <= (field.max ?? 1e9)) updateInput(field.key, v); } else if (field.unit !== 'date' || e.target.value) updateInput(field.key, e.target.value); }} />}<span className="min-w-[52px] text-[10px] leading-tight text-muted-foreground">{field.unit}</span></div>{((field.confirm && active.metadata[field.key]?.validation !== false) || (!field.confirm && field.validation)) && <p className="mt-1 text-[10px] font-medium text-amber-800 dark:text-amber-300">{field.confirm ? 'Needs confirmation (Franklin/Emi)' : 'Assumption — needs validation'}</p>}</label>;
 }

@@ -31,6 +31,9 @@ const bestFohFields: Field[] = bestFohLines.flatMap(([k, label]) => [
 export { bestFohLines };
 export const fields: Field[] = [
   { key: 'hubTier', label: 'Economics tier', unit: 'tier', group: 'Tier', value: 'Better', options: ['Good', 'Better', 'Best'] },
+  { key: 'plannerGuided', label: 'Guided logistics-first view', unit: 'on/off', group: 'Guided setup', value: false },
+  { key: 'plannerSetupMethod', label: 'Setup starting point', unit: 'method', group: 'Guided setup', value: 'scott', options: ['scott', 'november', 'questions'] },
+  { key: 'plannerFohMode', label: 'Front-of-house planning status', unit: 'status', group: 'Guided setup', value: 'deferred', options: ['deferred', 'planning'] },
   num('sf', 'Total hub area', 'SF', 'Space', 3000),
   num('rent', 'Annual rent', '$/SF/year', 'Space', 24),
   num('discount', 'Partner rent discount', '%', 'Space', 0, 100),
